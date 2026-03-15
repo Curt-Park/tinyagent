@@ -1,4 +1,4 @@
-# LACE — Light Agent Coding Engine
+# tinyagent
 
 A minimal coding agent that queries a language model, parses bash actions from its output, executes them, and feeds results back — all in a single Python script.
 

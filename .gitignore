@@ -129,7 +129,7 @@ dmypy.json
 .pyre/
 
 # Trajectories
-trajectory_*.json
+logs/
 
 # Etc
 .DS_Store

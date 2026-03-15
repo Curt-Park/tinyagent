@@ -9,11 +9,15 @@ from run import TerminatingError, parse_action, save_trajectory, truncate_output
 
 class TestParseAction:
     def test_extracts_command(self):
+        output = "THOUGHT: list files\n```bash\nls -la\n```"
+        assert parse_action(output) == "ls -la"
+
+    def test_extracts_command_bash_action(self):
         output = "THOUGHT: list files\n```bash-action\nls -la\n```"
         assert parse_action(output) == "ls -la"
 
     def test_exit_raises(self):
-        output = "THOUGHT: done\n```bash-action\nexit\n```"
+        output = "THOUGHT: done\n```bash\nexit\n```"
         with pytest.raises(TerminatingError, match="exit"):
             parse_action(output)
 

@@ -1,7 +1,7 @@
-"""LACE: Light Agent Coding Engine.
+"""tinyagent: A minimal coding agent.
 
-A minimal coding agent that queries a language model, parses bash actions
-from its output, executes them, and feeds results back to the model.
+Queries a language model, parses bash actions from its output,
+executes them, and feeds results back to the model.
 """
 
 import argparse
@@ -26,17 +26,18 @@ You are a coding agent. You solve tasks by running bash commands.
 
 On each turn reply with EXACTLY:
 1. THOUGHT: one sentence describing your plan.
-2. A single bash command inside a ```bash-action fenced block.
+2. A single bash command inside a ```bash fenced block.
 
-To finish, run:
-```bash-action
+When the task is complete, you MUST immediately run:
+```bash
 exit
 ```
 
 Rules:
+- ONE command per turn. No extra commentary after the code block.
 - Never use interactive commands (vim, less, python REPL, etc.).
 - Output may be truncated — work with what you see.
-- One command per turn.
+- As soon as you have the answer or have completed the task, exit. Do NOT keep exploring.
 """
 
 
@@ -56,7 +57,7 @@ def query_lm(messages: list[dict[str, str]], model: str) -> str:
 def parse_action(lm_output: str) -> str:
     """Extract a bash command from a ```bash-action``` fenced code block."""
     matches: list[str] = re.findall(
-        r"```bash-action\s*\n(.*?)\n```",
+        r"```(?:bash-action|bash)\s*\n?(.*?)\n?```",
         lm_output,
         re.DOTALL,
     )
@@ -101,7 +102,7 @@ def save_trajectory(messages: list[dict[str, str]], path: str) -> None:
 
 def main() -> None:
     """Run the agent loop: query → parse → execute → feed back."""
-    parser = argparse.ArgumentParser(description="LACE — Light Agent Coding Engine")
+    parser = argparse.ArgumentParser(description="tinyagent — a minimal coding agent")
     parser.add_argument("task", help="The task for the agent to solve")
     parser.add_argument("--model", default="openrouter/free", help="Model to use (default: openrouter/free)")
     parser.add_argument("--max-steps", type=int, default=30, help="Maximum number of steps (default: 30)")
@@ -137,8 +138,9 @@ def main() -> None:
     else:
         print(f"\nReached step limit ({args.max_steps}).")
 
+    os.makedirs("logs", exist_ok=True)
     ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    trajectory_path = f"trajectory_{ts}.json"
+    trajectory_path = f"logs/trajectory_{ts}.json"
     save_trajectory(messages, trajectory_path)
     print(f"Trajectory saved to {trajectory_path}")
 
