@@ -20,17 +20,17 @@ Both methods install `tinyagent` as a CLI command.
 
 ### Environment setup
 
-Set your OpenRouter API key before running:
+Set your API key before running:
 
 ```bash
-export OPENROUTER_API_KEY="your-key-here"
+export TINYAGENT_API_KEY="your-key-here"
 ```
 
 Or create a `.env` file in your working directory:
 
 ```bash
 cp .env.example .env
-# Add your OpenRouter API key to .env
+# Add your API key to .env
 ```
 
 ## Usage
@@ -40,6 +40,7 @@ tinyagent "List the files in this directory"
 tinyagent "Find all Python files" --max-steps 5
 tinyagent "Fix the bug in main.py" --model openrouter/free
 tinyagent "Refactor the utils module" --max-context-length 8000
+tinyagent "Explain this code" --base-url https://api.openai.com/v1 --model gpt-4o
 ```
 
 ## Features
