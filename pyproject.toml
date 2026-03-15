@@ -1,5 +1,5 @@
 [project]
-name = "python-project-template"
+name = "lace"
 version = "0.1.0"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -10,6 +10,9 @@ keywords = ["python", "project_template"]
 classifiers = []
 
 dependencies = []
+
+[project.scripts]
+lace = "lace.__main__:main"
 
 [project.optional-dependencies]
 dev = [
@@ -23,11 +26,11 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.ruff]
-line-length = 88
+line-length = 128
 target-version = "py312"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+packages = ["src/lace"]
 
 [tool.ruff.lint]
 select = [
@@ -45,11 +48,11 @@ select = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src/lace"]
 addopts = [
     "--strict-markers",
     "--strict-config",
-    "--cov=src",
+    "--cov=src/lace",
     "--cov-report=term-missing",
     "--cov-report=html",
 ]
