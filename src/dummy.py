@@ -1,0 +1,34 @@
+"""Dummy script for python-project-template."""
+
+import logging
+import logging.config
+
+logging.config.fileConfig("logging.conf")
+logger = logging.getLogger()
+
+
+def fibonacci(num: int) -> int:
+    """Calculate the nth Fibonacci number.
+
+    Args:
+        num: The position in the Fibonacci sequence (must be non-negative).
+
+    Returns:
+        The nth Fibonacci number.
+
+    Raises:
+        AssertionError: If num is negative.
+    """
+    assert num >= 0
+    prev, curr = 0, 1
+    for _ in range(num):
+        curr, prev = curr + prev, curr
+    return prev
+
+
+if __name__ == "__main__":  # pragma: no cover
+    logger.critical("Critical Msg")
+    logger.error("Error Msg")
+    logger.warning("Warning Msg")
+    logger.info("Info Msg")
+    logger.debug("Debug Msg")
