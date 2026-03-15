@@ -94,6 +94,31 @@ def truncate_output(text: str, max_chars: int = 10_000) -> str:
     return f"{text[:half]}\n[...truncated {removed} chars...]\n{text[-half:]}"
 
 
+def compact_messages(messages: list[dict[str, str]], model: str, max_context_tokens: int) -> None:
+    """Summarize and replace middle messages when approaching the token limit."""
+    estimated_tokens = sum(len(m["content"]) for m in messages) // 4
+    if estimated_tokens < max_context_tokens * 0.75:
+        return
+
+    # Preserve system prompt (first) and last 2 turn pairs (last 4 messages)
+    middle = messages[1:-4]
+    if len(middle) < 2:
+        return
+
+    middle_text = "\n".join(f"[{m['role']}]: {m['content'][:200]}" for m in middle)
+    summary_prompt = [
+        {
+            "role": "system",
+            "content": "Summarize the following agent conversation history in one concise paragraph. Focus on: what was done, what was learned, and what remains.",
+        },
+        {"role": "user", "content": middle_text},
+    ]
+    summary = query_lm(summary_prompt, model)
+
+    messages[1:-4] = [{"role": "user", "content": f"[Summary of earlier work]\n{summary}"}]
+    print(f"[compact] Replaced {len(middle)} messages with summary ({estimated_tokens} est. tokens)")
+
+
 def save_trajectory(messages: list[dict[str, str]], path: str) -> None:
     """Write the conversation messages to a JSON file."""
     with open(path, "w") as f:
@@ -106,6 +131,7 @@ def main() -> None:
     parser.add_argument("task", help="The task for the agent to solve")
     parser.add_argument("--model", default="openrouter/free", help="Model to use (default: openrouter/free)")
     parser.add_argument("--max-steps", type=int, default=30, help="Maximum number of steps (default: 30)")
+    parser.add_argument("--max-context-length", type=int, default=16000, help="Estimated token budget for context (default: 16000)")
     args = parser.parse_args()
 
     messages: list[dict[str, str]] = [
@@ -116,6 +142,7 @@ def main() -> None:
     for step in range(1, args.max_steps + 1):
         print(f"\n--- Step {step}/{args.max_steps} ---")
         try:
+            compact_messages(messages, args.model, args.max_context_length)
             lm_output: str = query_lm(messages, model=args.model)
             print(lm_output)
             messages.append({"role": "assistant", "content": lm_output})
@@ -129,10 +156,12 @@ def main() -> None:
             print(f"Done: {e}")
             break
         except subprocess.TimeoutExpired:
-            messages.append({"role": "user", "content": (
-                "Your last command timed out. You might want to try a "
-                "non-interactive alternative or break the task into smaller steps."
-            )})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": "Your last command timed out. You might want to try a non-interactive alternative or break the task into smaller steps.",
+                }
+            )
         except Exception as e:
             messages.append({"role": "user", "content": str(e)})
     else:

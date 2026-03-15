@@ -18,7 +18,16 @@ cp .env.example .env
 python run.py "List the files in this directory"
 python run.py "Find all Python files" --max-steps 5
 python run.py "Fix the bug in main.py" --model openrouter/free
+python run.py "Refactor the utils module" --max-context-length 8000
 ```
+
+## Features
+
+- LLM-driven bash command execution in an agent loop
+- Automatic output truncation for long command results
+- Context compaction — summarizes older turns when approaching the token budget
+- Configurable model, step limit, and context length
+- Trajectory logging to JSON after each run
 
 A `trajectory_<timestamp>.json` file is saved after each run.
 
