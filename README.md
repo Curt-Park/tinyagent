@@ -2,12 +2,33 @@
 
 A minimal coding agent that queries a language model, parses bash actions from its output, executes them, and feeds results back — all in a single Python script.
 
-## Setup
+## Installation
+
+```bash
+pip install git+ssh://git@github.com/Curt-Park/tinyagent.git
+```
+
+### From source
 
 ```bash
 curl https://mise.run | sh  # Install mise (https://mise.jdx.dev)
 mise trust && mise install  # Install Python 3.12 and uv via .mise.toml
-uv sync --extra dev
+uv sync
+```
+
+Both methods install `tinyagent` as a CLI command.
+
+### Environment setup
+
+Set your OpenRouter API key before running:
+
+```bash
+export OPENROUTER_API_KEY="your-key-here"
+```
+
+Or create a `.env` file in your working directory:
+
+```bash
 cp .env.example .env
 # Add your OpenRouter API key to .env
 ```
@@ -15,10 +36,10 @@ cp .env.example .env
 ## Usage
 
 ```bash
-python run.py "List the files in this directory"
-python run.py "Find all Python files" --max-steps 5
-python run.py "Fix the bug in main.py" --model openrouter/free
-python run.py "Refactor the utils module" --max-context-length 8000
+tinyagent "List the files in this directory"
+tinyagent "Find all Python files" --max-steps 5
+tinyagent "Fix the bug in main.py" --model openrouter/free
+tinyagent "Refactor the utils module" --max-context-length 8000
 ```
 
 ## Features
@@ -34,6 +55,7 @@ A `trajectory_<timestamp>.json` file is saved after each run.
 ## Development
 
 ```bash
+uv sync --extra dev  # Install dev dependencies (ruff, pytest)
 ruff check .         # Lint
 pytest               # Test
 ```
