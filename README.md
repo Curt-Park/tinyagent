@@ -1,57 +1,30 @@
-# Python Project Template
-A template project for quickly starting Python projects with modern development practices.
+# tinyagent
 
-## Overview
-This template provides a modern Python development environment with the following features:
-- **Ruff** for code formatting and linting (replaces Black, isort, flake8)
-- **pytest** for unit testing and coverage reporting
-- **uv** for fast dependency management
-- **Type hints** and **PEP 257** compliant docstring enforcement
-- **GitHub Actions** for CI/CD pipeline
-- **Release Please** for automated version management based on Conventional Commits
-- Modular project structure (src layout)
-- Logging configuration included
+A minimal coding agent that queries a language model, parses bash actions from its output, executes them, and feeds results back — all in a single Python script.
 
-## Project Structure
-```
-python-project-template/
-├── src/              # Source code
-├── tests/            # Test code
-├── .github/          # GitHub Actions workflows
-├── .cursorrules      # Cursor IDE AI assistant rules and guidelines
-├── .mise.toml        # mise tool version manager configuration (Python and tool versions)
-├── pyproject.toml    # Project configuration and dependencies
-├── release-please-config.json    # Release Please configuration for automated version management
-├── .release-please-manifest.json # Release Please manifest file (auto-managed by release-please)
-├── Makefile          # Development commands
-└── logging.conf      # Logging configuration
-```
+## Setup
 
-### Commands for Setups
 ```bash
-make init       # Initialize the project
-make setup      # Install dependencies
-make setup-dev  # Install dependencies with development packages
+curl https://mise.run | sh  # Install mise (https://mise.jdx.dev)
+mise trust && mise install  # Install Python 3.12 and uv via .mise.toml
+uv sync --extra dev
+cp .env.example .env
+# Add your OpenRouter API key to .env
 ```
 
-## Commands for Development
+## Usage
+
 ```bash
-$ make format   # format python scripts
-$ make lint     # lint python scripts
-$ make test     # run unit tests
+python run.py "List the files in this directory"
+python run.py "Find all Python files" --max-steps 5
+python run.py "Fix the bug in main.py" --model openrouter/free
 ```
 
-## Recommended Repository Settings
-#### Restriction on multi-commit pushes
-`Settings` -> `General` -> `Merge botton` -> `Allow squash merging` ONLY
-<img width="796" src="https://user-images.githubusercontent.com/14961526/152031596-a329a74c-add7-4d1c-ada5-d0279da16195.png">
+A `trajectory_<timestamp>.json` file is saved after each run.
 
-#### Branch Protection Rules
-`Settings` -> `Branches` -> `Branch protection rules` -> `Add rule`
-- Branch name pattern: `main`
-- Require a pull request before merging & Require approvals
-- Require status checks to pass before merging & Require branches to be up to date before merging
-- Include administrators
+## Development
 
-## NOTE
-- The python version should be aligned in `pyproject.toml` and `.mise.toml`.
+```bash
+ruff check .         # Lint
+pytest               # Test
+```

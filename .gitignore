@@ -128,5 +128,8 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# Trajectories
+logs/
+
 # Etc
 .DS_Store

@@ -1,15 +1,16 @@
 [project]
-name = "python-project-template"
-version = "0.1.0"
+name = "tinyagent"
+version = "0.2.0"
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [
     { name = "Curt Park", email = "www.jwpark.co.kr@gmail.com" },
 ]
-keywords = ["python", "project_template"]
-classifiers = []
 
-dependencies = []
+dependencies = [
+    "openai >= 2.28.0",
+    "python-dotenv >= 1.1.0",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -18,16 +19,9 @@ dev = [
     "pytest-cov>=7.0.0",
 ]
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
 [tool.ruff]
-line-length = 88
+line-length = 128
 target-version = "py312"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src"]
 
 [tool.ruff.lint]
 select = [
@@ -45,11 +39,11 @@ select = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["."]
 addopts = [
     "--strict-markers",
     "--strict-config",
-    "--cov=src",
+    "--cov=run",
     "--cov-report=term-missing",
     "--cov-report=html",
 ]
