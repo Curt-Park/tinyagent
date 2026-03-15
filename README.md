@@ -23,7 +23,7 @@ Both methods install `tinyagent` as a CLI command.
 Set your API key before running:
 
 ```bash
-export TINYAGENT_API_KEY="your-key-here"
+export TINYAGENT_API_KEY="your-key-here"  # Default: OpenRouter API key is required
 ```
 
 Or create a `.env` file in your working directory:
