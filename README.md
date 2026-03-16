@@ -85,5 +85,4 @@ pytest               # Test
 
 ## References
 
-- [SWE-agent](https://github.com/SWE-agent/SWE-agent)
-- [live-swe-agent](https://github.com/OpenAutoCoder/live-swe-agent)
+- [mini-SWE-agent](https://github.com/SWE-agent/mini-swe-agent)
