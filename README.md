@@ -1,6 +1,8 @@
 # tinyagent
 
-A minimal coding agent that uses function-calling to execute bash commands in a loop — all in a single Python script. Works with any OpenAI-compatible API (OpenRouter, OpenAI, vLLM, Ollama, etc.).
+A coding agent in a single Python script under 150 lines for educational purpose.
+It calls an LLM, executes bash commands via function-calling, and loops until the task is done.
+Works with any OpenAI-compatible API (OpenRouter, OpenAI, vLLM, Ollama, etc.).
 
 ## Installation
 
