@@ -1,6 +1,6 @@
 # tinyagent
 
-A minimal coding agent that queries a language model, parses bash actions from its output, executes them, and feeds results back — all in a single Python script.
+A minimal coding agent that uses function-calling to execute bash commands in a loop — all in a single Python script. Works with any OpenAI-compatible API (OpenRouter, OpenAI, vLLM, Ollama, etc.).
 
 ## Installation
 
@@ -37,21 +37,41 @@ cp .env.example .env
 
 ```bash
 tinyagent "List the files in this directory"
-tinyagent "Find all Python files" --max-steps 5
-tinyagent "Fix the bug in main.py" --model openrouter/free
-tinyagent "Refactor the utils module" --max-context-length 8000
-tinyagent "Explain this code" --base-url https://api.openai.com/v1 --model gpt-4o
+tinyagent "Fix the bug in main.py" --config path/to/custom.yaml
+tinyagent "Explain this repo" --model google/gemini-2.0-flash-001  # override model
+tinyagent "Refactor utils.py" --max-steps 10 --command-timeout 60  # override limits
 ```
+
+By default, tinyagent uses the `openrouter/free` model, which requires no payment but may produce poor results (e.g., garbled tool calls or incomplete answers).
+For better performance, use `--model` to select a higher-quality model.
+
+The default config is bundled at `config/default.yaml`.
+Use `--config` to override with a custom YAML file, or use CLI flags to override individual settings.
+
+Run `tinyagent --help` for all available options.
+
+## Configuration
+
+All settings are defined in a YAML config file (`config/default.yaml`):
+
+| Key                  | Description                                      |
+|----------------------|--------------------------------------------------|
+| `system_prompt`      | System message for the LLM                       |
+| `instance_template`  | User message template (`{{task}}` is replaced)   |
+| `compact_prompt`     | Prompt used to summarize older conversation turns |
+| `model`              | Model name                                       |
+| `base_url`           | LLM API base URL                                 |
+| `max_steps`          | Maximum agent loop iterations                    |
+| `max_context_length` | Estimated token budget for context compaction     |
+| `command_timeout`    | Seconds before a command is killed                |
 
 ## Features
 
-- LLM-driven bash command execution in an agent loop
-- Automatic output truncation for long command results
+- OpenAI function-calling (`tools` param) for structured bash execution
+- YAML-based config — prompts, model, and defaults are not hardcoded
+- Instance template with few-shot examples for the task prompt
 - Context compaction — summarizes older turns when approaching the token budget
-- Configurable model, step limit, and context length
 - Trajectory logging to JSON after each run
-
-A `trajectory_<timestamp>.json` file is saved after each run.
 
 ## Development
 
@@ -60,3 +80,8 @@ uv sync --extra dev  # Install dev dependencies (ruff, pytest)
 ruff check .         # Lint
 pytest               # Test
 ```
+
+## References
+
+- [SWE-agent](https://github.com/SWE-agent/SWE-agent)
+- [live-swe-agent](https://github.com/OpenAutoCoder/live-swe-agent)

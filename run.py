@@ -3,109 +3,112 @@
 import argparse
 import json
 import os
-import re
 import subprocess
 from datetime import UTC, datetime
+from pathlib import Path
 
+import yaml
 from dotenv import load_dotenv
 from openai import OpenAI
 
 load_dotenv()
 
-SYSTEM_PROMPT = """\
-You are a coding agent. You solve tasks by running bash commands.
+BASH_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "bash",
+        "description": "Execute a bash command",
+        "parameters": {
+            "type": "object",
+            "properties": {"command": {"type": "string", "description": "The bash command to execute"}},
+            "required": ["command"],
+        },
+    },
+}
 
-On each turn reply with EXACTLY:
-1. THOUGHT: one sentence describing your plan.
-2. A single bash command inside a ```bash fenced block.
 
-When the task is complete, you MUST immediately run:
-```bash
-exit
-```
-
-Rules:
-- ONE command per turn. No extra commentary after the code block.
-- Never use interactive commands (vim, less, python REPL, etc.).
-- Output may be truncated — work with what you see.
-- As soon as you have the answer or have completed the task, exit. Do NOT keep exploring.
-"""
-
-COMPACT_PROMPT = "Summarize the following agent conversation history in one concise paragraph. Focus on: what was done, what was learned, and what remains."
+def color(code, text):
+    return f"\033[{code}m{text}\033[0m"
 
 
 class Agent:
     """A minimal coding agent that queries an LLM and executes bash commands."""
 
-    def __init__(self, model: str, base_url: str, api_key: str, max_steps: int = 30, max_context_length: int = 16000) -> None:
-        self.client = OpenAI(base_url=base_url, api_key=api_key)
-        self.model = model
-        self.max_steps = max_steps
-        self.max_context_length = max_context_length
+    def __init__(self, config: dict, api_key: str) -> None:
+        self.client = OpenAI(base_url=config["base_url"], api_key=api_key)
+        for k in ("model", "max_steps", "max_context_length", "system_prompt", "instance_template", "compact_prompt", "command_timeout"):
+            setattr(self, k, config[k])
 
-    def query(self, messages: list[dict[str, str]]) -> str:
-        """Send messages to the language model and return the response text."""
-        return self.client.chat.completions.create(model=self.model, messages=messages).choices[0].message.content
+    def query(self, messages: list[dict]):
+        return (
+            self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                tools=[BASH_TOOL],
+            )
+            .choices[0]
+            .message
+        )
 
-    @staticmethod
-    def parse_action(text: str) -> str | None:
-        """Extract a bash command from a fenced code block. Return None to stop."""
-        matches = re.findall(r"```(?:bash)\s*\n?(.*?)\n?```", text, re.DOTALL)
-        if not matches or matches[0].strip() == "exit":
-            return None
-        return matches[0].strip()
-
-    def compact(self, messages: list[dict[str, str]]) -> None:
+    def compact(self, messages: list[dict]) -> None:
         """Summarize and replace middle messages when approaching the token limit."""
-        estimated_tokens = sum(len(m["content"]) for m in messages) // 4
+        estimated_tokens = sum(len(m.get("content") or "") for m in messages) // 4
         if estimated_tokens < self.max_context_length * 0.75:
             return
-
         middle = messages[1:-4]
         if len(middle) < 2:
             return
-
-        middle_text = "\n".join(f"[{m['role']}]: {m['content'][:200]}" for m in middle)
-        summary = self.query([
-            {"role": "system", "content": COMPACT_PROMPT},
-            {"role": "user", "content": middle_text},
-        ])
+        middle_text = "\n".join(f"[{m['role']}]: {(m.get('content') or '')[:200]}" for m in middle)
+        summary = self.query(
+            [
+                {"role": "system", "content": self.compact_prompt},
+                {"role": "user", "content": middle_text},
+            ]
+        ).content
         messages[1:-4] = [{"role": "user", "content": f"[Summary of earlier work]\n{summary}"}]
-        print(f"[compact] Replaced {len(middle)} messages with summary ({estimated_tokens} est. tokens)")
+        print(color("1;35", f"\nCompacted {len(middle)} messages ({estimated_tokens} est. tokens)"))
 
-    def run(self, task: str) -> list[dict[str, str]]:
+    def run(self, task: str) -> list[dict]:
         """Run the agent loop and return the message history."""
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": task},
+        messages: list[dict] = [
+            {"role": "system", "content": self.system_prompt},
+            {"role": "user", "content": self.instance_template.replace("{{task}}", task)},
         ]
         for i in range(1, self.max_steps + 1):
-            print(f"\n--- Step {i}/{self.max_steps} ---")
+            print(color("1;34", f"\n{'=' * 50}\n Step {i}/{self.max_steps}\n{'=' * 50}"))
+            self.compact(messages)
+            response = self.query(messages)
+            messages.append(response.model_dump(exclude_none=True))
+            if response.content:
+                print(color("1;33", "Response:") + f"\n{response.content}")
+            if not response.tool_calls:
+                print(color("1;32", "\nDone."))
+                break
+            command = json.loads(response.tool_calls[0].function.arguments).get("command", "")
+            if command == "exit":
+                print(color("1;32", "\nDone."))
+                break
+            print(color("1;36", f"\n$ {command}"))
             try:
-                self.compact(messages)
-                response = self.query(messages)
-                print(response)
-                messages.append({"role": "assistant", "content": response})
-
-                action = self.parse_action(response)
-                if action is None:
-                    print("Done.")
-                    break
-
-                print(f"→ {action}")
-                result = subprocess.run(
-                    action, shell=True, text=True, env=os.environ,
-                    encoding="utf-8", errors="replace",
-                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=30,
+                output = (
+                    subprocess.run(
+                        command,
+                        shell=True,
+                        text=True,
+                        env=os.environ,
+                        encoding="utf-8",
+                        errors="replace",
+                        capture_output=True,
+                        timeout=self.command_timeout,
+                    ).stdout
+                    or "(no output)"
                 )
-                messages.append({"role": "user", "content": result.stdout or "(no output)"})
-                print(messages[-1]["content"])
             except subprocess.TimeoutExpired:
-                messages.append({"role": "user", "content": "Command timed out."})
-            except Exception as e:
-                messages.append({"role": "user", "content": str(e)})
+                output = color("1;31", "Command timed out.")
+            messages.append({"role": "tool", "tool_call_id": response.tool_calls[0].id, "content": output})
+            print(f"\n{output}")
         else:
-            print(f"\nReached step limit ({self.max_steps}).")
+            print(color("1;31", f"\nReached step limit ({self.max_steps})."))
         return messages
 
 
@@ -113,16 +116,22 @@ def main() -> None:
     """CLI entry point."""
     parser = argparse.ArgumentParser(description="tinyagent — a minimal coding agent")
     parser.add_argument("task", help="The task for the agent to solve")
-    parser.add_argument("--model", default="openrouter/free", help="Model to use")
-    parser.add_argument("--base-url", default="https://openrouter.ai/api/v1", help="LLM API base URL")
-    parser.add_argument("--max-steps", type=int, default=30, help="Maximum number of steps")
-    parser.add_argument("--max-context-length", type=int, default=16000, help="Estimated token budget")
+    default_config = Path(__file__).parent / "config" / "default.yaml"
+    parser.add_argument("--config", default=str(default_config), help="Path to YAML config file")
+    parser.add_argument("--model", help="Override model name")
+    parser.add_argument("--base-url", help="Override API base URL")
+    parser.add_argument("--max-steps", type=int, help="Override max steps")
+    parser.add_argument("--max-context-length", type=int, help="Override max context length")
+    parser.add_argument("--command-timeout", type=int, help="Override command timeout in seconds")
     args = parser.parse_args()
 
-    agent = Agent(
-        model=args.model, base_url=args.base_url, api_key=os.getenv("TINYAGENT_API_KEY"),
-        max_steps=args.max_steps, max_context_length=args.max_context_length,
-    )
+    with Path(args.config).open() as f:
+        config = yaml.safe_load(f)
+    for key in ("model", "base_url", "max_steps", "max_context_length", "command_timeout"):
+        if (val := getattr(args, key, None)) is not None:
+            config[key] = val
+
+    agent = Agent(config=config, api_key=os.getenv("TINYAGENT_API_KEY"))
     messages = agent.run(args.task)
 
     os.makedirs("logs", exist_ok=True)
