@@ -1,6 +1,6 @@
 # tinyagent
 
-A coding agent with web search in a single Python script, exactly 100 lines for educational purposes.
+A coding agent with web search in a single Python script, around 100 lines for educational purposes.
 It calls an LLM, executes bash commands and web searches via function-calling, and loops until the task is done.
 Works with any OpenAI-compatible API (OpenRouter, OpenAI, vLLM, Ollama, etc.).
 
