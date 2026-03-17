@@ -8,6 +8,7 @@ authors = [
 ]
 
 dependencies = [
+    "ddgs >= 9.11.4",
     "openai >= 2.28.0",
     "python-dotenv >= 1.1.0",
     "pyyaml >= 6.0",

@@ -1,7 +1,7 @@
 # tinyagent
 
-A coding agent in a single Python script under 100 lines for educational purpose.
-It calls an LLM, executes bash commands via function-calling, and loops until the task is done.
+A coding agent with web search in a single Python script, exactly 100 lines for educational purposes.
+It calls an LLM, executes bash commands and web searches via function-calling, and loops until the task is done.
 Works with any OpenAI-compatible API (OpenRouter, OpenAI, vLLM, Ollama, etc.).
 
 ## Installation
@@ -42,6 +42,7 @@ tinyagent "List the files in this directory"
 tinyagent "Fix the bug in main.py" --config path/to/custom.yaml
 tinyagent "Explain this repo" --model google/gemini-3.1-flash-lite-preview  # override model
 tinyagent "Refactor utils.py" --max-steps 10 --command-timeout 60  # override limits
+tinyagent "Search the web for Python 3.13 new features and summarize them"  # web search
 ```
 
 By default, tinyagent uses the `openrouter/free` model, which requires no payment but may produce poor results (e.g., garbled tool calls or incomplete answers).
@@ -69,7 +70,8 @@ All settings are defined in a YAML config file (`config/default.yaml`):
 
 ## Features
 
-- OpenAI function-calling (`tools` param) for structured bash execution
+- OpenAI function-calling (`tools` param) for structured bash execution and web search
+- Web search via [DuckDuckGo](https://duckduckgo.com/) — no API key required
 - YAML-based config — prompts, model, and defaults are not hardcoded
 - Instance template with few-shot examples for the task prompt
 - Context compaction — summarizes older turns when approaching the token budget
