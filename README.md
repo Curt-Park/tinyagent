@@ -1,6 +1,6 @@
 # tinyagent
 
-A coding agent in a single Python script under 150 lines for educational purpose.
+A coding agent in a single Python script under 100 lines for educational purpose.
 It calls an LLM, executes bash commands via function-calling, and loops until the task is done.
 Works with any OpenAI-compatible API (OpenRouter, OpenAI, vLLM, Ollama, etc.).
 
@@ -40,7 +40,7 @@ cp .env.example .env
 ```bash
 tinyagent "List the files in this directory"
 tinyagent "Fix the bug in main.py" --config path/to/custom.yaml
-tinyagent "Explain this repo" --model google/gemini-2.0-flash-001  # override model
+tinyagent "Explain this repo" --model google/gemini-3.1-flash-lite-preview  # override model
 tinyagent "Refactor utils.py" --max-steps 10 --command-timeout 60  # override limits
 ```
 
