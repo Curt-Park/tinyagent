@@ -1,14 +1,16 @@
 """Tests for tinyagent."""
 
 import json
+import subprocess
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+import yaml
 
-from run import Agent, load_config
+from run import Agent, main
 
-TEST_CONFIG = {
+CFG = {
     "system_prompt": "test prompt",
     "instance_template": "{{task}}",
     "compact_prompt": "test compact",
@@ -20,139 +22,161 @@ TEST_CONFIG = {
 }
 
 
-def _make_tool_response(command: str, tool_call_id: str = "call_1"):
-    """Create a mock response with a tool call."""
-    tc = SimpleNamespace(id=tool_call_id, type="function", function=SimpleNamespace(name="bash", arguments=json.dumps({"command": command})))
-    return SimpleNamespace(
+def _resp(name, args, tool_call_id="call_1"):
+    tc = SimpleNamespace(id=tool_call_id, type="function", function=SimpleNamespace(name=name, arguments=json.dumps(args)))
+    msg = SimpleNamespace(
         content=None,
         tool_calls=[tc],
-        model_dump=lambda exclude_none=False: {"role": "assistant", "tool_calls": [{"id": tc.id, "type": "function", "function": {"name": "bash", "arguments": tc.function.arguments}}]},
+        model_dump=lambda exclude_none=False: {"role": "assistant", "tool_calls": [{"id": tc.id, "type": "function", "function": {"name": name, "arguments": tc.function.arguments}}]},
     )
+    return SimpleNamespace(choices=[SimpleNamespace(message=msg)])
 
 
-def _make_text_response(text: str):
-    """Create a mock response with text only (no tool calls)."""
-    return SimpleNamespace(content=text, tool_calls=None, model_dump=lambda exclude_none=False: {"role": "assistant", "content": text})
+def _text_resp(text):
+    msg = SimpleNamespace(content=text, tool_calls=None, model_dump=lambda exclude_none=False: {"role": "assistant", "content": text})
+    return SimpleNamespace(choices=[SimpleNamespace(message=msg)])
+
+
+def _bash(cmd, call_id="call_1"):
+    return _resp("bash", {"command": cmd}, call_id)
+
+
+def _search(query, call_id="call_1"):
+    return _resp("web_search", {"query": query}, call_id)
 
 
 @pytest.fixture
 def agent():
     with patch("run.OpenAI"):
-        return Agent(config=TEST_CONFIG, api_key="test")
+        return Agent(CFG, "test")
+
+
+# --- run loop ---
 
 
 class TestRun:
-    def test_exit_command_stops_loop(self, agent):
-        agent.client.chat.completions.create.return_value = SimpleNamespace(choices=[SimpleNamespace(message=_make_tool_response("exit"))])
-        messages = agent.run("do something")
-        assert len(messages) == 3  # system + user + assistant
+    def test_exit_stops(self, agent):
+        agent.client.chat.completions.create.return_value = _bash("exit")
+        assert len(agent.run("task")) == 3  # system + user + assistant
+
+    def test_no_tool_calls_stops(self, agent):
+        agent.client.chat.completions.create.return_value = _text_resp("Done!")
+        msgs = agent.run("task")
+        assert len(msgs) == 3
+        assert msgs[-1]["content"] == "Done!"
 
     @patch("run.subprocess.run")
-    def test_tool_call_executes_command(self, mock_subprocess, agent):
-        mock_subprocess.return_value = MagicMock(stdout="file1.txt\nfile2.txt\n")
-        responses = [
-            SimpleNamespace(choices=[SimpleNamespace(message=_make_tool_response("ls", "call_1"))]),
-            SimpleNamespace(choices=[SimpleNamespace(message=_make_tool_response("exit", "call_2"))]),
-        ]
-        agent.client.chat.completions.create.side_effect = responses
-        messages = agent.run("list files")
-        mock_subprocess.assert_called_once()
-        # system + user + assistant(ls) + tool(output) + assistant(exit)
-        assert len(messages) == 5
+    def test_tool_call_executes(self, mock_sub, agent):
+        mock_sub.return_value = MagicMock(stdout="output\n")
+        agent.client.chat.completions.create.side_effect = [_bash("ls", "c1"), _bash("exit", "c2")]
+        msgs = agent.run("list files")
+        mock_sub.assert_called_once()
+        assert len(msgs) == 5  # system + user + assistant + tool + assistant
 
-    def test_no_tool_calls_stops_loop(self, agent):
-        agent.client.chat.completions.create.return_value = SimpleNamespace(choices=[SimpleNamespace(message=_make_text_response("All done!"))])
-        messages = agent.run("do something")
-        assert len(messages) == 3
-        assert messages[-1]["content"] == "All done!"
+    def test_step_limit(self, agent):
+        agent.max_steps = 2
+        agent.client.chat.completions.create.side_effect = [_bash("echo 1", "c1"), _bash("echo 2", "c2")]
+        with patch("run.subprocess.run", return_value=MagicMock(stdout="ok")):
+            assert len(agent.run("loop")) == 6  # system + user + 2*(assistant + tool)
+
+    @patch("run.DDGS")
+    def test_web_search_in_loop(self, mock_ddgs, agent):
+        mock_ddgs.return_value.text.return_value = [{"title": "Doc", "href": "http://doc.com", "body": "Info"}]
+        agent.client.chat.completions.create.side_effect = [_search("python"), _text_resp("Done!")]
+        msgs = agent.run("search")
+        assert any("Doc" in (m.get("content") or "") for m in msgs)
+
+
+# --- _exec ---
+
+
+class TestExec:
+    @patch("run.DDGS")
+    def test_web_search(self, mock_ddgs, agent):
+        mock_ddgs.return_value.text.return_value = [{"title": "R", "href": "http://r.com", "body": "body"}]
+        output = agent._exec("web_search", {"query": "q"})
+        assert "R" in output and "http://r.com" in output
+        mock_ddgs.return_value.text.assert_called_once_with("q", max_results=5)
+
+    @patch("run.DDGS")
+    def test_web_search_no_results(self, mock_ddgs, agent):
+        mock_ddgs.return_value.text.return_value = []
+        assert agent._exec("web_search", {"query": "q"}) == "(no results)"
+
+    @patch("run.subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="x", timeout=1))
+    def test_bash_timeout(self, _mock, agent):
+        assert "timed out" in agent._exec("bash", {"command": "sleep 999"})
+
+    @pytest.mark.parametrize("cmd", ["exit", ""])
+    def test_bash_returns_none(self, agent, cmd):
+        assert agent._exec("bash", {"command": cmd}) is None
+
+
+# --- compact ---
 
 
 class TestCompact:
-    def _make_messages(self, middle_count: int, char_per_msg: int = 100) -> list:
-        msgs = [{"role": "system", "content": "system prompt"}]
-        for i in range(middle_count):
-            role = "user" if i % 2 == 0 else "assistant"
-            msgs.append({"role": role, "content": "x" * char_per_msg})
-        for i in range(4):
-            role = "user" if i % 2 == 0 else "assistant"
-            msgs.append({"role": role, "content": f"recent_{i}"})
+    def _msgs(self, n, size=100):
+        msgs = [{"role": "system", "content": "sys"}]
+        msgs += [{"role": "user" if i % 2 == 0 else "assistant", "content": "x" * size} for i in range(n)]
+        msgs += [{"role": "user" if i % 2 == 0 else "assistant", "content": f"r{i}"} for i in range(4)]
         return msgs
 
     def test_no_compaction_below_threshold(self, agent):
-        msgs = self._make_messages(4, char_per_msg=10)
+        msgs = self._msgs(4, size=10)
         original = [m.copy() for m in msgs]
         agent.compact(msgs)
         assert msgs == original
 
-    @patch.object(Agent, "query", return_value=SimpleNamespace(content="Summary of work done."))
-    def test_compaction_replaces_middle(self, mock_query, agent):
-        msgs = self._make_messages(10, char_per_msg=400)
-        original_len = len(msgs)
-        agent.max_context_length = 1000
-        agent.compact(msgs)
-        assert len(msgs) < original_len
-        assert msgs[1]["content"].startswith("[Summary of earlier work]")
-        mock_query.assert_called_once()
-
     @patch.object(Agent, "query", return_value=SimpleNamespace(content="Summary."))
-    def test_preserves_system_and_recent(self, mock_query, agent):
-        msgs = self._make_messages(10, char_per_msg=400)
-        system = msgs[0].copy()
-        recent_4 = [m.copy() for m in msgs[-4:]]
+    def test_compaction_replaces_middle(self, _mock, agent):
+        msgs = self._msgs(10, size=400)
+        system, recent = msgs[0].copy(), [m.copy() for m in msgs[-4:]]
         agent.max_context_length = 1000
         agent.compact(msgs)
+        assert msgs[1]["content"].startswith("[Summary]")
         assert msgs[0] == system
-        assert msgs[-4:] == recent_4
+        assert msgs[-4:] == recent
 
     def test_skips_when_middle_too_small(self, agent):
-        msgs = [
-            {"role": "system", "content": "s" * 4000},
-            {"role": "user", "content": "m" * 4000},
-            {"role": "user", "content": "r1"},
-            {"role": "assistant", "content": "r2"},
-            {"role": "user", "content": "r3"},
-            {"role": "assistant", "content": "r4"},
-        ]
+        msgs = [{"role": "system", "content": "s" * 4000}, {"role": "user", "content": "m" * 4000}]
+        msgs += [{"role": "user" if i % 2 == 0 else "assistant", "content": f"r{i}"} for i in range(4)]
         original = [m.copy() for m in msgs]
         agent.max_context_length = 1000
         agent.compact(msgs)
         assert msgs == original
 
     def test_handles_none_content(self, agent):
-        msgs = [
-            {"role": "system", "content": "system prompt"},
-            {"role": "assistant", "content": None},
-            {"role": "user", "content": "x" * 100},
-            {"role": "user", "content": "r1"},
-            {"role": "assistant", "content": "r2"},
-            {"role": "user", "content": "r3"},
-            {"role": "assistant", "content": "r4"},
-        ]
-        # Should not raise on None content
-        agent.compact(msgs)
+        msgs = [{"role": "system", "content": "sys"}, {"role": "assistant", "content": None}, {"role": "user", "content": "x" * 100}]
+        msgs += [{"role": "user" if i % 2 == 0 else "assistant", "content": f"r{i}"} for i in range(4)]
+        agent.compact(msgs)  # should not raise
 
 
-class TestConfig:
-    def test_loads_default_config(self):
-        config = load_config("config/default.yaml")
-        assert config["model"] == "openrouter/free"
-        assert config["max_steps"] == 30
-        assert config["command_timeout"] == 30
-
-    def test_loads_custom_config(self, tmp_path):
-        cfg_file = tmp_path / "test.yaml"
-        cfg_file.write_text("model: gpt-4o\nmax_steps: 10\ncommand_timeout: 60\n")
-        config = load_config(str(cfg_file))
-        assert config["model"] == "gpt-4o"
-        assert config["max_steps"] == 10
-        assert config["command_timeout"] == 60
+# --- main ---
 
 
-class TestSaveTrajectory:
-    def test_writes_json(self, tmp_path):
-        messages = [{"role": "user", "content": "hello"}]
-        path = str(tmp_path / "traj.json")
-        with open(path, "w") as f:
-            json.dump(messages, f, indent=2)
-        with open(path) as f:
-            assert json.load(f) == messages
+class TestMain:
+    @pytest.fixture
+    def cfg_file(self, tmp_path):
+        f = tmp_path / "cfg.yaml"
+        f.write_text(yaml.dump(CFG))
+        return str(f)
+
+    @patch("run.Agent")
+    def test_main_runs(self, mock_cls, tmp_path, cfg_file, monkeypatch):
+        mock_cls.return_value.run.return_value = [{"role": "user", "content": "hi"}]
+        monkeypatch.setattr("sys.argv", ["tinyagent", "task", "--config", cfg_file])
+        monkeypatch.chdir(tmp_path)
+        main()
+        mock_cls.return_value.run.assert_called_once_with("task")
+        logs = list(tmp_path.glob("logs/trajectory_*.json"))
+        assert len(logs) == 1
+        assert json.loads(logs[0].read_text()) == [{"role": "user", "content": "hi"}]
+
+    @patch("run.Agent")
+    def test_main_overrides(self, mock_cls, tmp_path, cfg_file, monkeypatch):
+        mock_cls.return_value.run.return_value = []
+        monkeypatch.setattr("sys.argv", ["tinyagent", "task", "--config", cfg_file, "--max-steps", "5"])
+        monkeypatch.chdir(tmp_path)
+        main()
+        assert mock_cls.call_args[0][0]["max_steps"] == 5
