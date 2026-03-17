@@ -94,22 +94,22 @@ class TestExec:
     @patch("run.DDGS")
     def test_web_search(self, mock_ddgs, agent):
         mock_ddgs.return_value.text.return_value = [{"title": "R", "href": "http://r.com", "body": "body"}]
-        output = agent._exec("web_search", {"query": "q"})
+        output = agent._exec_web_search({"query": "q"})
         assert "R" in output and "http://r.com" in output
         mock_ddgs.return_value.text.assert_called_once_with("q", max_results=5)
 
     @patch("run.DDGS")
     def test_web_search_no_results(self, mock_ddgs, agent):
         mock_ddgs.return_value.text.return_value = []
-        assert agent._exec("web_search", {"query": "q"}) == "(no results)"
+        assert agent._exec_web_search({"query": "q"}) == "(no results)"
 
     @patch("run.subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="x", timeout=1))
     def test_bash_timeout(self, _mock, agent):
-        assert "timed out" in agent._exec("bash", {"command": "sleep 999"})
+        assert "timed out" in agent._exec_bash({"command": "sleep 999"})
 
     @pytest.mark.parametrize("cmd", ["exit", ""])
     def test_bash_returns_none(self, agent, cmd):
-        assert agent._exec("bash", {"command": cmd}) is None
+        assert agent._exec_bash({"command": cmd}) is None
 
 
 # --- compact ---
